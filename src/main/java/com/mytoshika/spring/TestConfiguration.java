@@ -11,8 +11,8 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class TestConfiguration {
-    public static final String ACCESS_KEY = "XXXXXXXXXXXXXXXX"; //""AKIAI6CSE2UG2KNXF2VA";
-    public static final String SECRET_KEY = "XXXXXXXXXXXXXXXXXXXX"; //""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";
+    public static final String ACCESS_KEY = "AKIAI6CSE2UG2KNXF2VA";
+    public static final String SECRET_KEY = "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";
 
     @Bean
     public AmazonS3 amazonS3(AWSCredentials awsCredentials) {

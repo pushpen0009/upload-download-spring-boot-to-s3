@@ -1,12 +1,6 @@
 package com.mytoshika.spring;
 
-import com.amazonaws.util.IOUtils;
-import com.mytoshika.spring.utils.Utils;
-import org.apache.commons.fileupload.FileItemIterator;
-import org.apache.commons.fileupload.FileItemStream;
-import org.apache.commons.fileupload.FileUploadException;
-import org.apache.commons.fileupload.ProgressListener;
-import org.apache.commons.fileupload.servlet.ServletFileUpload;
+import com.amazonaws.services.s3.internal.Constants;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -15,56 +9,68 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
-import javax.servlet.http.HttpServletRequest;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
+import java.util.List;
 
-@RestController
+@RestController("/api")
 public class FileUploadController {
+
+    final int UPLOAD_PART_SIZE = 5 * Constants.KB;
 
     @Autowired
     private S3Utils s3Utils;
 
+    @Autowired
+    private OrderService service;
     @PostMapping(value = "/file/upload", consumes = "multipart/form-data")
-    public ResponseEntity<String> uploadFile(HttpServletRequest request) {
-        boolean isMultipart = ServletFileUpload.isMultipartContent(request);
-        if (isMultipart) {
-            try {
-                ServletFileUpload upload = new ServletFileUpload();
-                ProgressListener progressListener = new TestProgressListener();
-                upload.setProgressListener(progressListener);
-                FileItemIterator itemIterator = upload.getItemIterator(request);
-                while (itemIterator.hasNext()) {
-                    FileItemStream item = itemIterator.next();
-                    String name = item.getFieldName();
-                    InputStream stream = item.openStream();
-                    System.out.println("UPLOAD FILE NAME : " + item.getName());
-                    s3Utils.uploadFileFromS3(item.getName(), stream);
-                }
-            } catch (FileUploadException | IOException e) {
-                e.printStackTrace();
-                return new ResponseEntity<String>(HttpStatus.INTERNAL_SERVER_ERROR);
-            }
-            return new ResponseEntity<String>(HttpStatus.OK);
-        } else {
-            return new ResponseEntity<String>(HttpStatus.BAD_REQUEST);
+    public ResponseEntity<String> uploadFile(@RequestParam("file") MultipartFile file) {
+        try {
+            File fileObj = convertMultiPartToFile(file);
+            s3Utils.uploadFileFromS3(file.getOriginalFilename(), new FileInputStream(fileObj));
+        } catch (IOException e) {
+            e.printStackTrace();
+            return new ResponseEntity<String>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
+        return new ResponseEntity<String>(HttpStatus.OK);
+    }
+
+    private File convertMultiPartToFile(MultipartFile file) throws IOException {
+        File convFile = new File(file.getOriginalFilename());
+        FileOutputStream fos = new FileOutputStream(convFile);
+        fos.write(file.getBytes());
+        fos.close();
+        return convFile;
     }
 
     @GetMapping(value = "/file/download")
-    public ResponseEntity<byte[]> downloadFile(@RequestParam("fileName") String fileName) {
+    public ResponseEntity<String> downloadFile(@RequestParam("fileName") String fileName) {
         System.out.println("DOWNLOAD FILE NAME : " + fileName);
-        byte[] content = null;
         try {
             String key = fileName;
+            final int UPLOAD_PART_SIZE = 10 * Constants.KB;
             InputStream io = s3Utils.downloadFileFromS3(key);
-            System.out.println("DOWNLOAD FILE NAME : " + fileName /*+ " NO OF LINES : "+ Utils.countNoOfFiles(io, fileName)*/);
-            content = IOUtils.toByteArray(io);
+
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"").body(content);
+        return ResponseEntity.ok().header(HttpHeaders.CONTENT_TYPE,"application/json").body("{status: DONE}");
+    }
 
+    @GetMapping(value = "/orders")
+    public List<Order> getOrders(){
+        return service.getAllOrders();
+    }
+
+    @GetMapping(value = "/order/import")
+    public ResponseEntity<String> importFileToS3(@RequestParam("fileName") String fileName) {
+        System.out.println("EXPORT FILE NAME : " + fileName);
+        try {
+            service.uploadPartsFile(fileName);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return ResponseEntity.ok().header(HttpHeaders.CONTENT_TYPE, "application/json").body("{status: DONE}");
     }
 }
